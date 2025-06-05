@@ -1,0 +1,6 @@
+build/
+.dart_tool/
+.packages
+.idea/
+
+assets/soloni-114m-tdt-ctc-V0.onnx
