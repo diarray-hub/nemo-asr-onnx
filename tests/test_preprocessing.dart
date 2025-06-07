@@ -1,6 +1,6 @@
-import 'package:flutter_test/flutter_test.dart';
 import 'package:nemo_asr_onnx/src/audio/wav_loader.dart';
 import 'package:nemo_asr_onnx/src/audio/mel_spectrogram.dart';
+import 'package:test/test.dart';
 import 'const.dart';
 
 bool areListsClose(List<double> list1, List<double> list2, double tolerance) {
@@ -23,13 +23,11 @@ bool isCloseTo(double a, double b, double tolerance) {
 }
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
 
   group('OnnxBackend integration', () {
     const audioPath = 'tests/data/mono_44k.wav';
 
     test('Audio Preprocessing: wav -> mel', () async {
-      const modelAsset = 'assets/stt-bm-quartznet15x5-V0.onnx';
       // Step 1: Load raw audio
       final (rawAudio, numSamples) = await WavLoader.load(audioPath);
       print(rawAudio);

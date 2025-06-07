@@ -15,22 +15,22 @@ dependencies:
   collection: ^1.18.0
   fftea: ^1.5.0 # for FFT operations
   path: ^1.9.0                 # lightweight helper for asset locations
-  onnxruntime: ^1.4.0
-  flutter:
-    sdk: flutter
+  #onnxruntime: ^1.4.0
+  #flutter:
+  #  sdk: flutter
 
 
 dev_dependencies:
   test: ^1.25.0  # for writing & running unit tests :contentReference[oaicite:1]{index=1}
   lints: ^5.1.0
-  flutter_test:
-      sdk: flutter
+  # flutter_test:
+  #     sdk: flutter
 
-flutter:
-  assets:
-    - assets/stt-bm-quartznet15x5-V0.onnx
-    - assets/soloni-114m-tdt-ctc-V0.onnx
-    - assets/quartznet.vocab
+# flutter:
+#  assets:
+#    - assets/stt-bm-quartznet15x5-V0.onnx
+#    - assets/soloni-114m-tdt-ctc-V0.onnx
+#    - assets/quartznet.vocab
 
 license: MIT
 
