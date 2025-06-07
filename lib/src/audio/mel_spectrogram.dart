@@ -32,6 +32,7 @@ class MelSpectrogram {
   final int padTo;      // 16 (set 0 to disable)
   final double dither;  // 1e‑5
   final bool training;  // whether to add dither like NeMo
+  final double preEmph; // 0.97 pre-emphasis
   final bool normalisePerFeature;
 
   // ---------------------------------------------------------------------------
@@ -53,6 +54,7 @@ class MelSpectrogram {
     this.nMels = 64,
     this.padTo = 16,
     this.dither = 1e-5,
+    this.preEmph = 0.97,
     this.normalisePerFeature = true,
     this.training = false,
   })  : winLen = (windowSize * 16000).round(),
@@ -95,14 +97,24 @@ class MelSpectrogram {
       wavProc = temp;
     }
 
-    // 2. Center padding (reflect)
+    // 2. Optional pre-emphasis (y[n] = x[n] - preEmph * x[n-1])
+    if (preEmph != 0.0 && wavProc.isNotEmpty) {
+      final temp = Float32List(wavProc.length);
+      temp[0] = wavProc[0];
+      for (int i = 1; i < wavProc.length; ++i) {
+        temp[i] = wavProc[i] - preEmph * wavProc[i - 1];
+      }
+      wavProc = temp;
+    }
+
+    // 3. Center padding (reflect)
     final pad = nFft ~/ 2;
     final Float32List padded = _reflectPad(wavProc, pad);
 
-    // 3. Framing count
+    // 4. Framing count
     final int origFrames = 1 + ((padded.length - nFft) ~/ hopLen);
 
-    // 4. STFT → power → Mel
+    // 5. STFT → power → Mel
     final List<Float64List> mel = List.generate(
         origFrames, (_) => Float64List(nMels),
         growable: false);
@@ -132,15 +144,16 @@ class MelSpectrogram {
       }
     }
 
-    // 5. natural log
+    // 6. natural log
     for (int t = 0; t < origFrames; ++t) {
       for (int m = 0; m < nMels; ++m) {
         mel[t][m] = math.log(mel[t][m].clamp(1e-10, double.infinity));
       }
     }
+    // 7. per-feature mean/std normalisation
     if (normalisePerFeature) _perFeatureNorm(mel);
 
-    // 6. Pad time dimension to multiple of padTo
+    // 8. Pad time dimension to multiple of padTo
     int paddedFrames = origFrames;
     int extra = 0;
     if (padTo > 0) {
@@ -148,7 +161,7 @@ class MelSpectrogram {
       paddedFrames += extra;
     }
 
-    // 7. Flatten row‑major [mel, time]
+    // 9. Flatten row‑major [mel, time]
     final Float32List flat = Float32List(paddedFrames * nMels);
     int idx = 0;
     for (int m = 0; m < nMels; ++m) {
@@ -164,9 +177,26 @@ class MelSpectrogram {
   // ---------------------------------------------------------------------------
   Float32List _reflectPad(Float32List src, int pad) {
     final out = Float32List(src.length + 2 * pad);
-    for (int i = 0; i < pad; ++i) out[i] = src[pad - i];
+    int reflect(int idx, int len) {
+      while (idx < 0 || idx >= len) {
+        if (idx < 0) {
+          idx = -idx;
+        } else {
+          idx = 2 * len - 2 - idx;
+        }
+      }
+      return idx;
+    }
+
+    for (int i = 0; i < pad; ++i) {
+      final srcIdx = reflect(pad - i, src.length);
+      out[i] = src[srcIdx];
+    }
     out.setAll(pad, src);
-    for (int i = 0; i < pad; ++i) out[pad + src.length + i] = src[src.length - 2 - i];
+    for (int i = 0; i < pad; ++i) {
+      final srcIdx = reflect(src.length - 2 - i, src.length);
+      out[pad + src.length + i] = src[srcIdx];
+    }
     return out;
   }
 

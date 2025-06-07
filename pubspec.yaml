@@ -29,7 +29,6 @@ dev_dependencies:
 flutter:
   assets:
     - assets/stt-bm-quartznet15x5-V0.onnx
-    - assets/soloni-114m-tdt-ctc-V0.onnx
     - assets/quartznet.vocab
 
 license: MIT
