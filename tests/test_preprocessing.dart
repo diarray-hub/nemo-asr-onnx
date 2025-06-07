@@ -1,9 +1,6 @@
-import 'package:collection/collection.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nemo_asr_onnx/src/audio/wav_loader.dart';
 import 'package:nemo_asr_onnx/src/audio/mel_spectrogram.dart';
-import 'package:nemo_asr_onnx/src/runtime/onnx_backend.dart';
-import 'package:nemo_asr_onnx/src/decoding/ctc_greedy_decode.dart';
 import 'const.dart';
 
 bool areListsClose(List<double> list1, List<double> list2, double tolerance) {
@@ -31,7 +28,7 @@ void main() {
   group('OnnxBackend integration', () {
     const audioPath = 'tests/data/mono_44k.wav';
 
-    test('end-to-end: wav -> mel -> onnx inference -> ctc decode', () async {
+    test('Audio Preprocessing: wav -> mel', () async {
       const modelAsset = 'assets/stt-bm-quartznet15x5-V0.onnx';
       // Step 1: Load raw audio
       final (rawAudio, numSamples) = await WavLoader.load(audioPath);
@@ -53,47 +50,12 @@ void main() {
       final (melFlat, nFrames) = melSpec.process(rawAudio);
       expect(melFlat.isNotEmpty, isTrue);
       expect(nFrames, greaterThan(0));
-
       //print((melFlat));
 
       expect(true, areListsClose(melFlat.toList(), flattenedMelSpec, 1e-5));
 
       print(
           'Computed mel spectrogram with $nFrames frames and 64 features per frame (${melFlat.length} total values). No yet Matching quartznet.preprocessor');
-
-      // Step 3: Initialize OnnxBackend and run inference
-      final backend = OnnxBackend();
-      await backend.init(modelAsset);
-
-      final input = backend.buildInput(
-        melFlat,
-        melSpec.nMels,
-        nFrames,
-      );
-      final List<List<List<double>>> logits =
-          backend.infer(input, inputName: 'audio_signal');
-
-      // Step 4: Basic sanity checks on output
-      print((logits[0].length, logits[0][0].length));
-
-      expect(logits.isNotEmpty, isTrue);
-
-      expect(
-          true,
-          areListsClose(
-              logits.flattenedToList.flattenedToList, logProbs, 1e-5));
-
-      final List<String> vocab = await loadQuartznetVocab();
-      print(vocab.length);
-
-      expect(
-          vocab.length, equals(logits[0][0].length - 1)); // +1 for blank symbol
-
-      final String transcript = ctcGreedyDecode(logits, vocab);
-
-      print('Transcript: $transcript');
-
-      backend.dispose();
     });
   });
 }

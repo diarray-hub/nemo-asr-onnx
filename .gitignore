@@ -3,4 +3,5 @@ build/
 .packages
 .idea/
 
+# Do not upload the parakeet model
 assets/soloni-114m-tdt-ctc-V0.onnx
