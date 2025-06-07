@@ -31,6 +31,8 @@ class MelSpectrogram {
   final int nMels;      // 64
   final int padTo;      // 16 (set 0 to disable)
   final double dither;  // 1e‑5
+  final bool training;  // whether to add dither like NeMo
+  final double preEmph; // 0.97 pre-emphasis
   final bool normalisePerFeature;
 
   // ---------------------------------------------------------------------------
@@ -52,7 +54,9 @@ class MelSpectrogram {
     this.nMels = 64,
     this.padTo = 16,
     this.dither = 1e-5,
+    this.preEmph = 0.97,
     this.normalisePerFeature = true,
+    this.training = false,
   })  : winLen = (windowSize * 16000).round(),
         hopLen = (windowStride * 16000).round() {
     assert(nFft.isEven && nFft >= winLen);
@@ -73,30 +77,44 @@ class MelSpectrogram {
   // Public API
   // ---------------------------------------------------------------------------
   (Float32List, int) process(Float32List wav) {
-    // 1. Add Gaussian dither
-    final rnd = math.Random();
-    Float32List noise = Float32List(wav.length);
-    for (int i = 0; i < wav.length; i += 2) {
-      final u1 = rnd.nextDouble() + 1e-12;
-      final u2 = rnd.nextDouble();
-      final r = math.sqrt(-2.0 * math.log(u1));
-      final theta = 2 * math.pi * u2;
-      noise[i] = r * math.cos(theta);
-      if (i + 1 < wav.length) noise[i + 1] = r * math.sin(theta);
-    }
-    final Float32List wavDither = Float32List(wav.length);
-    for (int i = 0; i < wav.length; ++i) {
-      wavDither[i] = wav[i] + noise[i] * dither;
+    // 1. Optional Gaussian dither (training mode only)
+    Float32List wavProc = wav;
+    if (training && dither > 0.0) {
+      final rnd = math.Random();
+      final noise = Float32List(wav.length);
+      for (int i = 0; i < wav.length; i += 2) {
+        final u1 = rnd.nextDouble() + 1e-12;
+        final u2 = rnd.nextDouble();
+        final r = math.sqrt(-2.0 * math.log(u1));
+        final theta = 2 * math.pi * u2;
+        noise[i] = r * math.cos(theta);
+        if (i + 1 < wav.length) noise[i + 1] = r * math.sin(theta);
+      }
+      final temp = Float32List(wav.length);
+      for (int i = 0; i < wav.length; ++i) {
+        temp[i] = wav[i] + noise[i] * dither;
+      }
+      wavProc = temp;
     }
 
-    // 2. Center padding (reflect)
+    // 2. Optional pre-emphasis (y[n] = x[n] - preEmph * x[n-1])
+    if (preEmph != 0.0 && wavProc.isNotEmpty) {
+      final temp = Float32List(wavProc.length);
+      temp[0] = wavProc[0];
+      for (int i = 1; i < wavProc.length; ++i) {
+        temp[i] = wavProc[i] - preEmph * wavProc[i - 1];
+      }
+      wavProc = temp;
+    }
+
+    // 3. Center padding (reflect)
     final pad = nFft ~/ 2;
-    final Float32List padded = _reflectPad(wavDither, pad);
+    final Float32List padded = _reflectPad(wavProc, pad);
 
-    // 3. Framing count
+    // 4. Framing count
     final int origFrames = 1 + ((padded.length - nFft) ~/ hopLen);
 
-    // 4. STFT → power → Mel
+    // 5. STFT → power → Mel
     final List<Float64List> mel = List.generate(
         origFrames, (_) => Float64List(nMels),
         growable: false);
@@ -126,15 +144,16 @@ class MelSpectrogram {
       }
     }
 
-    // 5. log10
+    // 6. natural log
     for (int t = 0; t < origFrames; ++t) {
       for (int m = 0; m < nMels; ++m) {
-        mel[t][m] = math.log(mel[t][m].clamp(1e-10, double.infinity)) / math.ln10;
+        mel[t][m] = math.log(mel[t][m].clamp(1e-10, double.infinity));
       }
     }
+    // 7. per-feature mean/std normalisation
     if (normalisePerFeature) _perFeatureNorm(mel);
 
-    // 6. Pad time dimension to multiple of padTo
+    // 8. Pad time dimension to multiple of padTo
     int paddedFrames = origFrames;
     int extra = 0;
     if (padTo > 0) {
@@ -142,7 +161,7 @@ class MelSpectrogram {
       paddedFrames += extra;
     }
 
-    // 7. Flatten row‑major [mel, time]
+    // 9. Flatten row‑major [mel, time]
     final Float32List flat = Float32List(paddedFrames * nMels);
     int idx = 0;
     for (int m = 0; m < nMels; ++m) {
@@ -158,9 +177,26 @@ class MelSpectrogram {
   // ---------------------------------------------------------------------------
   Float32List _reflectPad(Float32List src, int pad) {
     final out = Float32List(src.length + 2 * pad);
-    for (int i = 0; i < pad; ++i) out[i] = src[pad - i - 1];
+    int reflect(int idx, int len) {
+      while (idx < 0 || idx >= len) {
+        if (idx < 0) {
+          idx = -idx;
+        } else {
+          idx = 2 * len - 2 - idx;
+        }
+      }
+      return idx;
+    }
+
+    for (int i = 0; i < pad; ++i) {
+      final srcIdx = reflect(pad - i, src.length);
+      out[i] = src[srcIdx];
+    }
     out.setAll(pad, src);
-    for (int i = 0; i < pad; ++i) out[pad + src.length + i] = src[src.length - i - 1];
+    for (int i = 0; i < pad; ++i) {
+      final srcIdx = reflect(src.length - 2 - i, src.length);
+      out[pad + src.length + i] = src[srcIdx];
+    }
     return out;
   }
 

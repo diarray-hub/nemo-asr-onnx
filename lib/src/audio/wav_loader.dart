@@ -2,7 +2,8 @@
 
 import 'dart:io';
 import 'dart:typed_data';
-// import 'dart:math';
+import 'dart:math' as math;
+import 'package:fftea/resample.dart' as fftea;
 
 /// Return type for wav loader: (audio samples, number of samples).
 typedef AudioLoadResult = (Float32List audio, int numSamples);
@@ -149,29 +150,20 @@ class WavLoader {
 
     // --- Resample if origRate != targetRate ---
     if (origRate != targetRate) {
-      final int oldLen = rawMono.length;
-      final int newLen =
-          ((oldLen * targetRate) / origRate).round();
-      final Float32List resampled = Float32List(newLen);
-
-      if (newLen == 0) {
-        // Edge case: too short to resample meaningfully
-        return (Float32List(0), 0);
-      }
-
-      for (int i = 0; i < newLen; i++) {
-        final double pos = (i * (oldLen - 1)) / (newLen - 1);
-        final int idx0 = pos.floor();
-        final int idx1 = pos.ceil();
-        final double t = pos - idx0;
-        final double s0 = rawMono[idx0];
-        final double s1 = rawMono[idx1];
-        resampled[i] = ((1 - t) * s0 + t * s1).clamp(-1.0, 1.0).toDouble();
-      }
-      return (resampled, newLen);
+      final Float32List resampled = _sincResample(rawMono, origRate, targetRate);
+      return (resampled, resampled.length);
     }
 
     // No resampling needed
     return (rawMono, rawMono.length);
   }
+}
+
+// --------------------- Helper functions ---------------------
+
+// Resampler using FFT convolution (from `fftea` package)
+Float32List _sincResample(Float32List x, int origRate, int targetRate) {
+  final Float64List out =
+      fftea.resampleByRate(x, origRate.toDouble(), targetRate.toDouble());
+  return Float32List.fromList(out.map((e) => e.toDouble()).toList());
 }
